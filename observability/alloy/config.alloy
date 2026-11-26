@@ -1,0 +1,47 @@
+// Collects stdout of every container, parses the JSON log contract and labels by service and level.
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.relabel.containers.output
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.process.contract.receiver]
+}
+
+loki.process "contract" {
+  // Accept common aliases so any logger that writes JSON fits the contract.
+  stage.json {
+    expressions = {
+      level   = "level || lvl || severity",
+      service = "service",
+      trace   = "trace_id || traceId",
+    }
+  }
+  stage.template {
+    source   = "service"
+    template = "{{ if .service }}{{ .service }}{{ else }}{{ .compose_service }}{{ end }}"
+  }
+  stage.labels {
+    values = { level = "", service = "" }
+  }
+  stage.structured_metadata {
+    values = { trace_id = "trace" }
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

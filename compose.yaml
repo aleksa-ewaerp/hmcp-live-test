@@ -1,0 +1,17 @@
+# Add services under `services:` (see the docker recipe for your stack). Rules: pinned images,
+# healthcheck on every service, configuration only through environment, logs to stdout as JSON.
+name: app
+
+include:
+  - observability/compose.yaml
+
+services:
+  dozzle:
+    image: amir20/dozzle:v8.14.3
+    ports:
+      - "127.0.0.1:9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "/dozzle", "healthcheck"]
+      interval: 10s

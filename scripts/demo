@@ -1,0 +1,11 @@
+#!/bin/sh
+# Demo scenario over the public HTTP API: seed, run the story, reset. Language-agnostic.
+set -eu
+BASE=${BASE:-http://localhost:8080}
+step() { printf '\n== %s\n' "$1"; }
+step "Seed"
+curl -fsS -X POST "$BASE/demo/seed" >/dev/null
+step "Scenario"
+curl -fsS "$BASE/health"
+step "Reset"
+curl -fsS -X POST "$BASE/demo/reset" >/dev/null
