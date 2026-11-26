@@ -11,9 +11,9 @@ jobs:
     outputs:
       list: ${{ steps.find.outputs.list }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: find
-        run: echo "list=$(ls services/*/Makefile 2>/dev/null | xargs -r -n1 dirname | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+        run: echo "list=$(find services -mindepth 2 -maxdepth 2 -name Makefile -printf '%h\n' | sort | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
 
   service:
     needs: services
@@ -24,7 +24,7 @@ jobs:
       matrix:
         dir: ${{ fromJson(needs.services.outputs.list) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: make -C ${{ matrix.dir }} lint
       - run: make -C ${{ matrix.dir }} test
       - run: make -C ${{ matrix.dir }} build
@@ -32,8 +32,12 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: make docs-check HMCP_IMAGE=${{ vars.HMCP_IMAGE || 'ghcr.io/OWNER/hackathon-mcp:latest' }}
+      - uses: actions/checkout@v5
+      - env:
+          HMCP_IMAGE: ${{ vars.HMCP_IMAGE }}
+        run: |
+          [ -n "$HMCP_IMAGE" ] || { echo "::error::Repository variable HMCP_IMAGE is not set (hmcp repo protect sets it when the server has HMCP_DOCS_IMAGE)"; exit 1; }
+          make docs-check HMCP_IMAGE="$HMCP_IMAGE"
 
   pr-title:
     if: github.event_name == 'pull_request'
