@@ -1,0 +1,61 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  services:
+    name: services
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.find.outputs.list }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: find
+        run: echo "list=$(find services -mindepth 2 -maxdepth 2 -name Makefile -printf '%h\n' | sort | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  service:
+    needs: services
+    if: needs.services.outputs.list != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: ${{ fromJson(needs.services.outputs.list) }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: make -C ${{ matrix.dir }} lint
+      - run: make -C ${{ matrix.dir }} test
+      - run: make -C ${{ matrix.dir }} build
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - env:
+          HMCP_IMAGE: ${{ vars.HMCP_IMAGE }}
+        run: |
+          [ -n "$HMCP_IMAGE" ] || { echo "::error::Repository variable HMCP_IMAGE is not set (hmcp repo protect sets it when the server has HMCP_DOCS_IMAGE)"; exit 1; }
+          make docs-check HMCP_IMAGE="$HMCP_IMAGE"
+
+  pr-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "$TITLE" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .{1,72}$' \
+            || { echo "Pull request title must follow Conventional Commits: $TITLE"; exit 1; }
+
+  # The only required check: a skipped path-filtered job would stay pending forever.
+  ci-ok:
+    if: always()
+    needs: [services, service, docs, pr-title]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for r in "${{ needs.services.result }}" "${{ needs.service.result }}" "${{ needs.docs.result }}" "${{ needs.pr-title.result }}"; do
+            case "$r" in success|skipped) ;; *) echo "a job failed: $r"; exit 1 ;; esac
+          done
